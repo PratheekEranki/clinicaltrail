@@ -75,7 +75,7 @@
 
 ## Environment Variables
 
-All credentials go in `.env` (never committed):
+All credentials go in `example.env` (gitignored, never committed). `.env` is the committed template with placeholders only — copy it to `example.env` and fill in real values:
 
 ```
 # Zetaris (Sai Teja fills these)

@@ -235,6 +235,7 @@ LIMIT 30
 ## Security Rule
 
 **Never commit credentials to the repo.** This means:
-- `.env` is in `.gitignore` — never add it to git
+- `example.env` holds real credentials and is in `.gitignore` — never add it to git
+- `.env` is the committed template — placeholders only, never real values
 - Share Zetaris credentials with Pratheek via **direct message only**
 - Your Zetaris host, port, database name, username, and password stay out of all files in the repo
