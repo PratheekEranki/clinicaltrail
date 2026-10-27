@@ -16,6 +16,7 @@ class PipelineState(TypedDict, total=False):
     decision: str                     # "synthesise" | "retry"
     retry_sub_questions: list[str]
     retry_count: int
+    last_result_ids: dict             # evaluator's view of the previous round, to detect no-op retries
     final_answer: str
     supporting_evidence: list[dict]
     contradicting_evidence: list[dict]

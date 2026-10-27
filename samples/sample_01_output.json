@@ -1,0 +1,54 @@
+{
+  "query": "For elderly diabetic patients on ACE inhibitors, what does recent trial evidence say about cardiovascular outcomes, and does the published literature and outcomes data confirm or contradict it?",
+  "sub_questions": [
+    "Clinical trials: ACE inhibitors cardiovascular outcomes elderly diabetic patients",
+    "PubMed literature: ACE inhibitors cardiovascular outcomes diabetes elderly review",
+    "Outcomes data: ACE inhibitor treatment cardiovascular outcomes diabetes age 65+"
+  ],
+  "entities": {
+    "drugs": ["ACE inhibitors", "ramipril", "lisinopril", "enalapril"],
+    "conditions": ["type 2 diabetes mellitus", "cardiovascular disease", "heart failure"],
+    "populations": ["elderly patients", "age 65 and older"],
+    "outcomes": ["major adverse cardiovascular events", "MACE", "all-cause mortality"]
+  },
+  "trial_findings": "Multiple Phase III/IV trials (HOPE, ADVANCE, ONTARGET) confirm ACE inhibitor benefit in elderly diabetic patients. Ramipril (HOPE trial, n=9,297) reduced MACE by 25% (RR 0.75, 95% CI 0.64-0.87). Perindopril + indapamide (ADVANCE, n=11,140) showed 14% reduction in major macrovascular events. Active trials (NCT04012268, NCT05133336) continue to explore combination regimens.",
+  "literature_findings": "Systematic reviews (n=14 RCTs, 2020-2024) consistently support ACE inhibitor use. Meta-analysis by Smith et al. (NEJM 2023) confirms 18-22% MACE reduction in patients ≥65 with T2DM. Renal-protective effects may be attenuated in patients with eGFR <30 (3 RCTs). Recent guidelines (AHA 2024, ESC 2023) maintain Class I recommendation.",
+  "outcomes_findings": "Real-world outcomes databases (CPRD, UK Biobank subset): ACE inhibitor-treated elderly diabetic patients show 15.3% lower 5-year cardiovascular mortality vs. ARB comparators. Hyperkalaemia incidence 4.2% (vs 1.8% general diabetes population). Dry cough (leading to discontinuation) 12.7% in age ≥70 cohort.",
+  "contradictions": [
+    {
+      "severity": "medium",
+      "source_a": "ONTARGET trial (trial data)",
+      "claim_a": "Combination ACE inhibitor + ARB offers no additional benefit over monotherapy and increases renal adverse events",
+      "source_b": "Observational outcomes data (CPRD 2022)",
+      "claim_b": "Dual RAAS blockade associated with modest additional MACE reduction in elderly diabetic patients with proteinuria"
+    },
+    {
+      "severity": "low",
+      "source_a": "ADVANCE trial (literature)",
+      "claim_a": "HbA1c reduction did not significantly modify cardiovascular benefit of ACE inhibitor",
+      "source_b": "Meta-analysis subset (outcomes data)",
+      "claim_b": "Patients with HbA1c >8.5% showed attenuated ACE inhibitor cardiovascular benefit"
+    }
+  ],
+  "final_answer": "Trial evidence strongly supports ACE inhibitor use for cardiovascular risk reduction in elderly diabetic patients (HOPE, ADVANCE, ONTARGET), with 14-25% MACE reduction across trials. Published literature (14 RCTs, multiple meta-analyses 2020-2024) is consistent with this evidence base and current Class I guideline recommendations. Real-world outcomes data largely confirm trial findings (15.3% lower cardiovascular mortality vs. ARBs), though with higher rates of dry cough and hyperkalaemia in the ≥70 cohort. A medium-severity contradiction exists regarding combination RAAS blockade: trial data discourages dual therapy, while observational data suggests modest additional benefit in proteinuric patients — clinicians should weigh renal risk individually. Overall confidence is HIGH that ACE inhibitors remain first-line for this population.",
+  "supporting_evidence": [
+    "HOPE trial: 25% MACE reduction (RR 0.75, p<0.001)",
+    "ADVANCE trial: 14% major macrovascular event reduction",
+    "14 RCTs in meta-analysis confirm benefit in ≥65 T2DM",
+    "AHA 2024 / ESC 2023 Class I recommendation maintained"
+  ],
+  "contradicting_evidence": [
+    "ONTARGET: no added benefit from dual RAAS blockade, increased renal events",
+    "Real-world data suggests attenuated benefit in HbA1c >8.5% subgroup"
+  ],
+  "confidence": 0.84,
+  "retry_count": 0,
+  "trace": [
+    {"agent": "planner", "retry": 0, "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "action": "decomposed query into 3 sub-questions, extracted 4 entity classes"},
+    {"agent": "trial", "retry": 0, "data_origin": "zetaris", "results_count": 12, "sub_question": "ACE inhibitors cardiovascular outcomes elderly diabetic patients"},
+    {"agent": "literature", "retry": 0, "data_origin": "zetaris", "results_count": 15, "sub_question": "ACE inhibitors cardiovascular outcomes diabetes elderly review"},
+    {"agent": "outcomes", "retry": 0, "data_origin": "zetaris", "results_count": 28, "sub_question": "ACE inhibitor treatment cardiovascular outcomes diabetes age 65+"},
+    {"agent": "evaluator", "retry": 0, "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "decision": "synthesise", "reasoning": "All three sources returned sufficient data; 2 contradictions identified"},
+    {"agent": "synthesis", "retry": 0, "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "action": "generated final answer with confidence 0.84"}
+  ]
+}

@@ -70,10 +70,30 @@ def _clean_contradictions(raw) -> list[dict]:
     return out
 
 
+def _result_ids(findings: dict) -> dict[str, list[str]]:
+    return {k: sorted(str(sorted(r.items())) for r in v) for k, v in findings.items()}
+
+
 def evaluator_node(state: PipelineState) -> dict:
     started = time.perf_counter()
     findings = _from_memory(state)
     retry_count = state.get("retry_count", 0)
+    result_ids = _result_ids(findings)
+
+    if retry_count > 0 and result_ids == state.get("last_result_ids"):
+        # The retry returned exactly what we already evaluated — another LLM pass or
+        # retry can't add anything, so keep the previous verdict and move on.
+        return {
+            "decision": "synthesise",
+            "trace": [trace_entry(
+                "evaluator", started, model="skipped", retry=retry_count,
+                findings_counts={SOURCES[k]: len(v) for k, v in findings.items()},
+                contradictions=len(state.get("contradictions", [])),
+                decision="synthesise", retry_guard_forced_synthesis=True, retry_sub_questions=[],
+                reasoning="Retry returned identical results to the previous round; "
+                          "keeping earlier contradiction analysis and proceeding to synthesis.",
+            )],
+        }
 
     prompt = (
         f"Research question: {state['query']}\n\n"
@@ -82,7 +102,7 @@ def evaluator_node(state: PipelineState) -> dict:
         f"## Outcomes dataset\n{fmt_outcomes(findings['outcomes_findings'])}\n\n"
         f"Retries used so far: {retry_count} of {config.MAX_RETRY_COUNT}."
     )
-    result, model = llm.complete_json(SYSTEM, prompt, temperature=0.1)
+    result, model = llm.complete_json(SYSTEM, prompt, temperature=0.1, max_tokens=1500)
     if not isinstance(result, dict):
         result, model = _heuristic(state, findings), "heuristic"
 
@@ -98,6 +118,7 @@ def evaluator_node(state: PipelineState) -> dict:
     update = {
         "contradictions": contradictions,
         "decision": decision,
+        "last_result_ids": result_ids,
         "trace": [trace_entry(
             "evaluator", started, model=model, retry=retry_count,
             findings_counts={SOURCES[k]: len(v) for k, v in findings.items()},

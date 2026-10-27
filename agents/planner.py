@@ -39,7 +39,7 @@ def planner_node(state: PipelineState) -> dict:
     started = time.perf_counter()
     query = state["query"]
 
-    plan, model = llm.complete_json(SYSTEM, query, temperature=0.1)
+    plan, model = llm.complete_json(SYSTEM, query, temperature=0.1, max_tokens=800)
     if not isinstance(plan, dict) or not isinstance(plan.get("sub_questions"), dict):
         plan, model = _heuristic(query), "heuristic"
 

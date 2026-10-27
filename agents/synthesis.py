@@ -20,6 +20,9 @@ researcher. Requirements:
 - Cite specific NCT IDs and PMIDs (and dataset names) inline for every claim.
 - Address each contradiction explicitly and explain which evidence you weight more and why.
 - Do not invent sources or IDs that are not in the evidence.
+- supporting_evidence / contradicting_evidence list ONLY records that actually address the
+  research question. If the evidence is off-topic, leave both lists empty, say so in
+  final_answer, and give a confidence near 0.
 Respond with ONLY a JSON object:
 {"final_answer": "3-6 sentence answer",
  "supporting_evidence": [{"source": "ClinicalTrials.gov|PubMed|outcomes_dataset", "id": "", "claim": ""}],
@@ -45,7 +48,7 @@ def _llm_step(goal: str, carryover: str, new_context: str) -> str:
     text, _ = llm.complete(
         STEP_SYSTEM,
         f"Goal: {goal}\n\nCurrent summary:\n{carryover or '(empty)'}\n\nNew evidence:\n{new_context}",
-        temperature=0.2,
+        temperature=0.2, max_tokens=600,
     )
     if text is None:
         raise RuntimeError("no LLM")  # Markovian falls back to concatenation
@@ -86,18 +89,22 @@ def synthesis_node(state: PipelineState) -> dict:
     markov = Markovian(step_fn=_llm_step if llm.available() else None)
     markov.start_task(GOAL, constraints=["cite source IDs", "address contradictions"])
 
+    # Two bounded steps (published evidence, then real-world data + contradictions)
+    # keep Markovian carryover meaningful without an LLM call per source.
     for label, text in (
-        ("trials", fmt_trials(state.get("trial_findings", []))),
-        ("literature", fmt_literature(state.get("literature_findings", []))),
-        ("outcomes", fmt_outcomes(state.get("outcomes_findings", []))),
-        ("contradictions", fmt_contradictions(state.get("contradictions", []))),
+        ("trials+literature",
+         f"[trials]\n{fmt_trials(state.get('trial_findings', []))}\n\n"
+         f"[literature]\n{fmt_literature(state.get('literature_findings', []))}"),
+        ("outcomes+contradictions",
+         f"[outcomes]\n{fmt_outcomes(state.get('outcomes_findings', []))}\n\n"
+         f"[contradictions]\n{fmt_contradictions(state.get('contradictions', []))}"),
     ):
-        markov.next_step(None, f"[{label}]\n{text}", label=label)
+        markov.next_step(None, text, label=label)
 
     prompt = (f"Research question: {state['query']}\n\n"
               f"Evidence summary:\n{markov.get_carryover()}\n\n"
               f"Flagged contradictions:\n{fmt_contradictions(state.get('contradictions', []))}")
-    result, model = llm.complete_json(FINAL_SYSTEM, prompt, temperature=0.2)
+    result, model = llm.complete_json(FINAL_SYSTEM, prompt, temperature=0.2, max_tokens=1500)
     if not isinstance(result, dict) or not result.get("final_answer"):
         result, model = _heuristic_answer(state), "heuristic"
 
@@ -107,7 +114,9 @@ def synthesis_node(state: PipelineState) -> dict:
     except (TypeError, ValueError):
         llm_conf = None
     if llm_conf is not None:
-        confidence = round((llm_conf + evidence_score) / 2, 2)
+        # either signal alone can veto: rows that don't answer the question (llm low)
+        # or sources that disagree / are missing (evidence low)
+        confidence = round(min(llm_conf, evidence_score), 2)
     else:
         # no model reconciled the sources, so coverage alone can't justify high confidence
         confidence = min(evidence_score, HEURISTIC_CONFIDENCE_CAP)

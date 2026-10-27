@@ -28,8 +28,10 @@ def test_empty_source_triggers_bounded_retry(monkeypatch):
     monkeypatch.setattr(mock_sources, "query_literature", lambda q: [])
     result = run_pipeline("anything")
     evals = [t for t in result["trace"] if t["agent"] == "evaluator"]
-    assert result["retry_count"] == 2                 # retried up to the guard
-    assert len(evals) == 3 and evals[-1]["decision"] == "synthesise"
+    # first retry returns the same (empty) results, so the evaluator stops early
+    assert result["retry_count"] == 1
+    assert len(evals) == 2 and evals[-1]["model"] == "skipped"
+    assert evals[-1]["decision"] == "synthesise"
     assert result["final_answer"]                     # still answers, no crash
 
 

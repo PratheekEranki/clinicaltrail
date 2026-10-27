@@ -23,7 +23,25 @@ def _real(value: str | None) -> str:
 
 NVIDIA_API_KEY = _real(os.getenv("NVIDIA_API_KEY"))
 NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+
+# Primary NVIDIA model — override via NVIDIA_MODEL env var.
+# Must be a model ID from the NVIDIA NIM catalog (build.nvidia.com/models).
+# The list below is the fallback chain tried in order when one model fails permanently.
 NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b")
+
+# Ordered fallback chain for NVIDIA models.
+# Tried left-to-right if a model is permanently dead (404/401/410).
+# All have free endpoints as of Oct 2026.  GLM-5-3 is excluded (deprecating).
+NVIDIA_MODEL_FALLBACKS: list[str] = [
+    "nvidia/nemotron-3.5-lightning-30b-a3b",        # 30B MoE, fastest, agentic — primary
+    "nvidia/nemotron-3.5-super-vl-120b-a12b",       # 120B, best tool-calling, a bit slower
+    "nvidia/nemotron-3.5-bolt-e4b",                 # compact reasoning/agentic, very fast
+    "nvidia/deepseek-r1-67b-instruct",              # 552B MoE / 8B active, free tier
+    "zhipuai/glm-5-3-flash",                        # 320B / 18B active, multimodal
+    "openai/gpt-oss-20b",                           # OpenAI OSS 20B MoE on NVIDIA, reasoning
+]
+
+NVIDIA_THINKING = os.getenv("NVIDIA_THINKING", "false").lower() == "true"
 
 OPENAI_API_KEY = _real(os.getenv("OPENAI_API_KEY"))
 OPENAI_FALLBACK_MODEL = os.getenv("OPENAI_FALLBACK_MODEL", "gpt-4o-mini")

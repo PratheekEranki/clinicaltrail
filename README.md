@@ -70,8 +70,9 @@ python main.py --query "Do SGLT2 inhibitors reduce heart failure hospitalisation
 | `--offline` | No LLM calls at all — heuristics only (free, instant; good for testing wiring) |
 | `--json` | Print the full result as JSON instead of the rich tables |
 
-Each run uses ~5–7 LLM calls (planner, evaluator, 4 synthesis steps, final answer; more if
-the evaluator retries). Use `--offline` while working on wiring to spend zero tokens.
+Each run uses 5 LLM calls (planner, evaluator, 2 synthesis steps, final answer), plus one
+evaluator call per useful retry. Nemotron's hidden "thinking" is off by default (it was ~90%
+of output tokens and ~10× the latency); set `NVIDIA_THINKING=true` in `example.env` to turn it on. Use `--offline` while working on wiring to spend zero tokens.
 
 **Output:** tables in the terminal (sub-questions, agent trace, contradictions, answer +
 confidence) and the full trace saved to `logs/trace_<timestamp>.json`.
@@ -127,7 +128,7 @@ tests/test_pipeline.py
 
 ## How confidence is computed
 
-`confidence = average(LLM self-reported confidence, evidence score)` where
+`confidence = min(LLM self-reported confidence, evidence score)` where
 evidence score = source coverage (sources with results ÷ 3) × (1 − contradiction penalty),
 penalty = 0.03 low / 0.08 medium / 0.15 high per contradiction, capped at 0.5.
 Without an LLM, confidence is the evidence score capped at 0.5. All three numbers are in the

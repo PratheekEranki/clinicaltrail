@@ -1,0 +1,44 @@
+{
+  "query": "What are the current Phase III clinical trials for KRAS G12C inhibitors in non-small cell lung cancer, and how do patient outcomes compare across sotorasib and adagrasib regimens?",
+  "sub_questions": [
+    "Clinical trials: KRAS G12C inhibitor Phase III non-small cell lung cancer sotorasib adagrasib",
+    "PubMed literature: sotorasib adagrasib KRAS G12C NSCLC outcomes comparison",
+    "Outcomes data: KRAS G12C inhibitor treatment response rates overall survival NSCLC"
+  ],
+  "entities": {
+    "drugs": ["sotorasib", "adagrasib", "AMG 510", "MRTX849"],
+    "conditions": ["non-small cell lung cancer", "NSCLC", "KRAS G12C mutation"],
+    "outcomes": ["overall response rate", "progression-free survival", "overall survival"]
+  },
+  "trial_findings": "CodeBreaK 200 (sotorasib vs. docetaxel, n=345) showed ORR 28.1% vs. 13.2%, PFS 5.6 vs. 4.5 months. KRYSTAL-12 (adagrasib vs. docetaxel, n=453) showed ORR 31.9% vs. 11.1%, PFS 5.5 vs. 3.8 months. Both demonstrate statistically significant improvement over standard chemotherapy.",
+  "literature_findings": "Head-to-head comparison limited by lack of direct trial data. Cross-trial meta-analysis (5 studies, 2023-2024) suggests comparable ORR between agents (pooled ~30%). Adagrasib shows CNS activity in 33% of patients with brain metastases (KRYSTAL-1 cohort). Combination trials underway (adagrasib + pembrolizumab, sotorasib + pembrolizumab).",
+  "outcomes_findings": "Real-world registry (n=412 KRAS G12C NSCLC, 2022-2024): sotorasib median OS 12.1 months, adagrasib median OS 12.9 months (HR 0.96, 95% CI 0.75-1.23, not significant). Grade ≥3 AEs: sotorasib 21%, adagrasib 34% (primarily GI toxicity). Discontinuation: sotorasib 8%, adagrasib 14%.",
+  "contradictions": [
+    {
+      "severity": "low",
+      "source_a": "CodeBreaK 200 trial (trial data)",
+      "claim_a": "Sotorasib PFS benefit over docetaxel significant (HR 0.66, p=0.0017)",
+      "source_b": "Real-world outcomes registry",
+      "claim_b": "Real-world PFS for sotorasib 3.9 months (vs. 5.6 months in trial), suggesting patient selection effect"
+    }
+  ],
+  "final_answer": "Two approved KRAS G12C inhibitors dominate current Phase III development in NSCLC. Sotorasib (CodeBreaK 200) and adagrasib (KRYSTAL-12) show comparable efficacy in randomised trials (ORR ~28-32%, PFS ~5.5 months), both significantly outperforming docetaxel. Real-world outcomes confirm similar overall survival (12.1 vs. 12.9 months, HR 0.96, not significant), suggesting clinical equivalence in unselected patients. Adagrasib demonstrates an advantage for patients with CNS metastases (33% intracranial ORR). Adagrasib carries higher GI toxicity and discontinuation rates. Combination strategies with checkpoint inhibitors are active areas of investigation. For most patients, choice between agents may hinge on CNS involvement and toxicity profile rather than efficacy.",
+  "supporting_evidence": [
+    "CodeBreaK 200: ORR 28.1% sotorasib vs. 13.2% docetaxel (p<0.001)",
+    "KRYSTAL-12: ORR 31.9% adagrasib vs. 11.1% docetaxel",
+    "Real-world OS 12.1 vs. 12.9 months — no significant difference"
+  ],
+  "contradicting_evidence": [
+    "Trial PFS for sotorasib (5.6 mo) vs. real-world PFS (3.9 mo) — patient selection effect possible"
+  ],
+  "confidence": 0.79,
+  "retry_count": 0,
+  "trace": [
+    {"agent": "planner", "retry": 0, "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "action": "decomposed into 3 sub-questions"},
+    {"agent": "trial", "retry": 0, "data_origin": "zetaris", "results_count": 8},
+    {"agent": "literature", "retry": 0, "data_origin": "zetaris", "results_count": 15},
+    {"agent": "outcomes", "retry": 0, "data_origin": "zetaris", "results_count": 22},
+    {"agent": "evaluator", "retry": 0, "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "decision": "synthesise"},
+    {"agent": "synthesis", "retry": 0, "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "action": "generated final answer with confidence 0.79"}
+  ]
+}

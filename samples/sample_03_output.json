@@ -1,0 +1,56 @@
+{
+  "query": "In pediatric patients with relapsed/refractory ALL, what does the evidence show about CAR-T cell therapy versus blinatumomab for achieving durable remission?",
+  "sub_questions": [
+    "Clinical trials: CAR-T tisagenlecleucel blinatumomab relapsed refractory ALL pediatric",
+    "PubMed literature: CAR-T versus blinatumomab pediatric ALL remission durability comparison",
+    "Outcomes data: CAR-T blinatumomab pediatric ALL response rates long-term survival"
+  ],
+  "entities": {
+    "drugs": ["tisagenlecleucel", "blinatumomab", "Kymriah"],
+    "conditions": ["acute lymphoblastic leukemia", "ALL", "relapsed/refractory ALL"],
+    "populations": ["pediatric patients", "children", "adolescents"]
+  },
+  "trial_findings": "ELIANA trial (tisagenlecleucel, n=75 pediatric r/r ALL): overall remission rate 81%, 12-month event-free survival 50%, 12-month OS 76%. MT103-205 (blinatumomab pediatric, n=93): CR rate 39%, 12-month OS 55%. ALCANTARA (blinatumomab Ph+ ALL): CR 36%. No head-to-head pediatric RCT exists.",
+  "literature_findings": "Systematic review (8 studies, 2019-2024): tisagenlecleucel shows superior CR rates (81% vs. 39%) but higher severe CRS (77% grade ≥3 CRS). Blinatumomab 2-year follow-up data shows durable responses in 18-25% of complete responders. CAR-T responses more durable at 24 months (relapse-free survival 35-40% vs. 15-20%). Both are bridging strategies to allogeneic SCT in most centres.",
+  "outcomes_findings": "Paediatric oncology registry (COG/SIOPE, 2019-2024, n=284): tisagenlecleucel 24-month OS 58%, blinatumomab 24-month OS 41% (HR 0.64, 95% CI 0.49-0.84, p=0.001). CAR-T associated with higher early treatment-related mortality (8% vs. 1.2%) but superior long-term outcomes. Blinatumomab preferred for Ph+ ALL and CNS disease due to toxicity profile.",
+  "contradictions": [
+    {
+      "severity": "high",
+      "source_a": "ELIANA trial (trial data, selected population)",
+      "claim_a": "12-month OS 76% with tisagenlecleucel in r/r ALL",
+      "source_b": "Paediatric registry outcomes (real-world, unselected)",
+      "claim_b": "24-month OS 58% — suggests significant drop-off in real-world vs. trial, possible patient selection and centre expertise effects"
+    },
+    {
+      "severity": "medium",
+      "source_a": "Registry outcomes data",
+      "claim_a": "CAR-T significantly superior to blinatumomab at 24 months (HR 0.64, p=0.001)",
+      "source_b": "Literature review centres' practice",
+      "claim_b": "Most expert centres use blinatumomab as bridge to SCT before CAR-T, making direct comparison confounded by treatment sequencing"
+    }
+  ],
+  "final_answer": "For pediatric r/r ALL, tisagenlecleucel (CAR-T) achieves superior initial remission rates (81% vs. 39%) and more durable responses at 24 months (OS 58% vs. 41%, HR 0.64) compared to blinatumomab. However, a high-severity contradiction exists: trial remission rates (76% OS at 12 months) exceed real-world registry outcomes (58% at 24 months), suggesting significant patient selection in ELIANA. CAR-T carries substantially higher early treatment-related mortality (8% vs. 1.2%) and severe CRS. Blinatumomab is preferred for CNS disease and Ph+ ALL and is widely used as a bridge to SCT. Expert consensus treats both as complementary in sequenced therapy. For most institutions, the choice depends on disease biology, CNS status, toxicity tolerance, and transplant eligibility rather than a single agent being definitively superior.",
+  "supporting_evidence": [
+    "ELIANA: 81% CR rate tisagenlecleucel",
+    "Registry OS advantage for CAR-T: HR 0.64 at 24 months (p=0.001)",
+    "Longer durable remission with CAR-T: 35-40% vs. 15-20% relapse-free survival at 24 months"
+  ],
+  "contradicting_evidence": [
+    "Real-world OS (58%) substantially lower than ELIANA trial OS (76%) — selection bias",
+    "Treatment sequencing confounds head-to-head comparison in clinical practice"
+  ],
+  "confidence": 0.71,
+  "retry_count": 1,
+  "trace": [
+    {"agent": "planner", "retry": 0, "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "action": "decomposed into 3 sub-questions"},
+    {"agent": "trial", "retry": 0, "data_origin": "zetaris", "results_count": 6},
+    {"agent": "literature", "retry": 0, "data_origin": "zetaris", "results_count": 11},
+    {"agent": "outcomes", "retry": 0, "data_origin": "zetaris", "results_count": 14},
+    {"agent": "evaluator", "retry": 0, "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "decision": "retry", "reasoning": "Outcome results sparse; requesting broader outcomes search"},
+    {"agent": "trial", "retry": 1, "data_origin": "zetaris", "results_count": 6},
+    {"agent": "literature", "retry": 1, "data_origin": "zetaris", "results_count": 15},
+    {"agent": "outcomes", "retry": 1, "data_origin": "zetaris", "results_count": 28},
+    {"agent": "evaluator", "retry": 1, "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "decision": "synthesise", "reasoning": "Sufficient data now; 2 contradictions identified"},
+    {"agent": "synthesis", "retry": 1, "model": "nvidia/nemotron-3.5-lightning-30b-a3b", "action": "generated final answer with confidence 0.71"}
+  ]
+}

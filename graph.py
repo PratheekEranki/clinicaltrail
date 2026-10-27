@@ -20,7 +20,8 @@ DATA_AGENTS = ["trial", "literature", "outcomes"]
 
 def should_retry(state: PipelineState):
     # evaluator already enforces the guard; re-check so the graph can't loop forever
-    if state.get("decision") == "retry" and state.get("retry_count", 0) <= config.MAX_RETRY_COUNT:
+    # Use < (strict) so retry_count==MAX_RETRY_COUNT triggers synthesis, not another loop
+    if state.get("decision") == "retry" and state.get("retry_count", 0) < config.MAX_RETRY_COUNT:
         return DATA_AGENTS
     return "synthesis"
 
