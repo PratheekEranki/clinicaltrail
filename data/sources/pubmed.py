@@ -1,14 +1,11 @@
 """PubMed literature data source — Zetaris → PubMed E-utilities fallback.
 
 Primary path:
-  Zetaris REST API executes Lightning SQL against a registered REST source
-  for PubMed E-utilities (esearch + efetch).
+  Zetaris proxy API executes Lightning SQL against the registered REST source
+  for PubMed E-utilities (esearch).
 
-Fallback path (when Zetaris is not running):
+Fallback path (when Zetaris is not running or returns empty):
   Direct call to NCBI E-utilities (esearch → efetch).
-
-Mock path (when USE_MOCK_DATA=true or OFFLINE=true):
-  Handled by loader.py routing to mock_sources before this module is imported.
 
 Contract (enforced by loader._conform):
   keys: pmid, title, abstract, publication_date, journal, authors
@@ -23,57 +20,18 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 import config
+from data.sources import zetaris_client
 
 log = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Zetaris REST helpers (shared pattern — identical to clinical_trials.py)
-# ---------------------------------------------------------------------------
-
-_ZETARIS_REST_URL = os.getenv("ZETARIS_REST_URL", "http://localhost:8888/api/v1.0")
-_ZETARIS_API_KEY = os.getenv("ZETARIS_API_KEY", "")
-_ZETARIS_USERNAME = os.getenv("ZETARIS_USERNAME", "dev@account.com")
-_ZETARIS_PASSWORD = os.getenv("ZETARIS_PASSWORD", "password")
-
-# The Lightning SQL namespace where we registered PubMed E-utilities.
-# Register once:
-#   CREATE LIGHTNINGDB pubmed USING rest OPTIONS (
-#     url 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils',
-#     format 'xml'
-#   );
-_PM_NAMESPACE = os.getenv("ZETARIS_PM_NAMESPACE", "lightning.pubmed")
-
-
-def _zetaris_auth_header() -> dict:
-    if _ZETARIS_API_KEY:
-        return {"Authorization": f"Bearer {_ZETARIS_API_KEY}"}
-    import base64
-    creds = base64.b64encode(f"{_ZETARIS_USERNAME}:{_ZETARIS_PASSWORD}".encode()).decode()
-    return {"Authorization": f"Basic {creds}"}
-
-
-def _zetaris_query(sql: str, timeout: int = 30) -> list[dict]:
-    url = f"{_ZETARIS_REST_URL}/query"
-    payload = json.dumps({"sql": sql}).encode()
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        **_zetaris_auth_header(),
-    }
-    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        body = json.loads(resp.read().decode())
-    cols = body.get("columns", [])
-    rows = body.get("data", [])
-    return [dict(zip(cols, row)) for row in rows]
-
+_PM_NAMESPACE = os.getenv("ZETARIS_PM_NAMESPACE", "pubmed")
 
 # ---------------------------------------------------------------------------
 # PubMed E-utilities direct fallback
 # ---------------------------------------------------------------------------
 
 _EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
-_NCBI_EMAIL = os.getenv("NCBI_EMAIL", "clinicaltrail@hackathon.local")  # required by NCBI TOS
+_NCBI_EMAIL = os.getenv("NCBI_EMAIL", "clinicaltrail@hackathon.local")
 _NCBI_TOOL = "ClinicalTrailAgent"
 
 
@@ -124,13 +82,11 @@ def _efetch(pmids: list[str]) -> list[dict]:
             continue
         title_el = art.find("ArticleTitle")
         title = "".join(title_el.itertext()) if title_el is not None else ""
-
         abstract_texts = [
             "".join(t.itertext())
             for t in art.findall(".//AbstractText")
         ]
         abstract = " ".join(abstract_texts)
-
         journal = art.findtext("Journal/Title", "")
         pub_date_el = art.find("Journal/JournalIssue/PubDate")
         if pub_date_el is not None:
@@ -139,7 +95,6 @@ def _efetch(pmids: list[str]) -> list[dict]:
             pub_date = f"{year}-{month}" if month else year
         else:
             pub_date = ""
-
         author_list = art.find("AuthorList")
         authors = []
         if author_list is not None:
@@ -154,7 +109,7 @@ def _efetch(pmids: list[str]) -> list[dict]:
             "abstract": abstract,
             "publication_date": pub_date,
             "journal": journal,
-            "authors": "; ".join(authors[:5]),  # cap at 5 authors
+            "authors": "; ".join(authors[:5]),
         })
     return rows
 
@@ -179,21 +134,16 @@ def query_literature(sub_question: str) -> list[dict]:
     if not config.OFFLINE:
         try:
             safe_q = sub_question.replace("'", "''")
-            sql = f"""
-                SELECT pmid,
-                       title,
-                       abstract,
-                       publicationDate AS publication_date,
-                       journal,
-                       authors
-                FROM   {_PM_NAMESPACE}
-                WHERE  query = '{safe_q}'
-                LIMIT  15
-            """
-            rows = _zetaris_query(sql.strip())
-            if rows:
-                log.info("pubmed: %d rows from Zetaris", len(rows))
-                return rows
+            sql = (
+                f"SELECT * FROM {_PM_NAMESPACE}.esearch "
+                f"WHERE db = 'pubmed' AND term = '{safe_q}' LIMIT 15"
+            )
+            raw_rows = zetaris_client.query(sql, page_limit=15)
+            if raw_rows:
+                rows = _parse_zetaris_pm_rows(raw_rows)
+                if rows:
+                    log.info("pubmed: %d rows from Zetaris", len(rows))
+                    return rows
             log.info("pubmed: Zetaris returned 0 rows, trying direct API")
         except Exception as exc:
             log.warning("pubmed: Zetaris unavailable (%s), using direct API", exc)
@@ -206,3 +156,40 @@ def query_literature(sub_question: str) -> list[dict]:
     except Exception as exc:
         log.warning("pubmed: direct API also failed (%s)", exc)
         return []
+
+
+def _parse_zetaris_pm_rows(raw_rows: list[dict]) -> list[dict]:
+    """Normalise raw Zetaris rows to contract schema.
+
+    The pubmed.esearch table returns the NCBI JSON blob; parse it or map flat columns.
+    """
+    result = []
+    for row in raw_rows:
+        # Case 1: esearchresult JSON blob
+        if "esearchresult" in row:
+            er = row["esearchresult"]
+            if isinstance(er, str):
+                try:
+                    er = json.loads(er)
+                except Exception:
+                    continue
+            # esearch returns just PMIDs — fall through to direct efetch
+            pmids = er.get("idlist", []) if isinstance(er, dict) else []
+            if pmids:
+                try:
+                    fetched = _efetch(pmids[:15])
+                    result.extend(fetched)
+                except Exception:
+                    pass
+            continue
+
+        # Case 2: flat columns already projected by Zetaris
+        result.append({
+            "pmid": str(row.get("pmid", row.get("Id", ""))),
+            "title": str(row.get("title", row.get("Title", ""))),
+            "abstract": str(row.get("abstract", row.get("Abstract", ""))),
+            "publication_date": str(row.get("publication_date", row.get("PubDate", ""))),
+            "journal": str(row.get("journal", row.get("Journal", ""))),
+            "authors": str(row.get("authors", row.get("Authors", ""))),
+        })
+    return result

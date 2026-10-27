@@ -1,5 +1,6 @@
 """Planner Agent — decomposes the query into 3 source-targeted sub-questions
 and writes extracted entities to the Meterless World Model."""
+import re
 import time
 
 import llm
@@ -22,16 +23,36 @@ ENTITY_TYPES = {"conditions": "condition", "drugs": "drug",
                 "populations": "population", "outcomes": "outcome"}
 
 
+def _extract_keywords(query: str) -> str:
+    """Extract a short keyword phrase (<=60 chars) suitable as a Zetaris/API search term.
+
+    REST tables forward the sub-question as a URL/body parameter; a 200-char
+    natural-language sentence triggers HTTP 400.  Drop stop-words, cap at 8 tokens.
+    """
+    STOP = {
+        "a", "an", "the", "and", "or", "of", "on", "in", "for", "to", "is",
+        "are", "was", "were", "what", "does", "do", "say", "about", "it",
+        "that", "its", "with", "by", "from", "this", "these", "those", "have",
+        "has", "been", "be", "at", "as", "not", "which", "how", "recent",
+        "published", "trial", "evidence", "data", "confirm", "contradict",
+        "patients", "patient",
+    }
+    words = re.sub(r"[^\w\s-]", " ", query.lower()).split()
+    keywords = [w for w in words if w not in STOP and len(w) > 2][:8]
+    phrase = " ".join(keywords) if keywords else query[:60].strip()
+    return phrase[:60]
+
+
 def _heuristic(query: str) -> dict:
-    q = query.strip().rstrip("?")
+    kw = _extract_keywords(query)
     return {
         "sub_questions": {
-            "trials": f"clinical trials on {q}",
-            "literature": f"published research on {q}",
-            "outcomes": f"population outcomes data for {q}",
+            "trials": kw,
+            "literature": kw,
+            "outcomes": kw,
         },
         "entities": {"conditions": [], "drugs": [], "populations": [], "outcomes": []},
-        "reasoning": "LLM unavailable — used template decomposition of the full query.",
+        "reasoning": "LLM unavailable — used keyword extraction from the full query.",
     }
 
 

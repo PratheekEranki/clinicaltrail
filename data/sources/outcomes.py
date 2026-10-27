@@ -1,13 +1,13 @@
-"""Treatment outcomes data source — Zetaris → synthesised from ClinicalTrials.gov results.
+"""Treatment outcomes data source — Zetaris → ClinicalTrials.gov results API fallback.
 
 Primary path:
-  Zetaris REST API executes Lightning SQL against aggregated outcomes data
-  registered as a REST/CSV source in Zetaris (e.g. from ClinicalTrials.gov
-  results databases or linked publications).
+  Zetaris proxy API (http://localhost:3000/api/proxy/query/sql/start) executes a
+  Lightning SQL query against the registered REST data source for ClinicalTrials.gov
+  results (lightning.ct_results.study_results).
 
-Fallback path (when Zetaris is not running):
-  Derive outcome summaries by querying ClinicalTrials.gov v2 for results
-  sections (studiesWithResults endpoint), then map to the outcomes contract.
+Fallback path (when Zetaris is not running or returns empty):
+  Derive outcome summaries by querying ClinicalTrials.gov v2 for studies with results
+  (filter.advanced AREA[ResultsFirstSubmitDate]), then map to the outcomes contract.
 
 Mock path (when USE_MOCK_DATA=true or OFFLINE=true):
   Handled by loader.py routing to mock_sources before this module is imported.
@@ -16,14 +16,6 @@ Contract (enforced by loader._conform):
   keys: condition, treatment, outcome_metric, value,
         population_age_group, n_patients, source_dataset
   limit: 30 rows
-
-Note on the Zetaris namespace:
-  Register ClinicalTrials.gov results as a second REST source:
-    CREATE LIGHTNINGDB ct_results USING rest OPTIONS (
-      url 'https://clinicaltrials.gov/api/v2/studies',
-      format 'json'
-    );
-  The Lightning SQL query below targets {_OUTCOMES_NAMESPACE}.
 """
 import json
 import logging
@@ -32,44 +24,11 @@ import urllib.parse
 import urllib.request
 
 import config
+from data.sources import zetaris_client
 
 log = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Zetaris REST helpers
-# ---------------------------------------------------------------------------
-
-_ZETARIS_REST_URL = os.getenv("ZETARIS_REST_URL", "http://localhost:8888/api/v1.0")
-_ZETARIS_API_KEY = os.getenv("ZETARIS_API_KEY", "")
-_ZETARIS_USERNAME = os.getenv("ZETARIS_USERNAME", "dev@account.com")
-_ZETARIS_PASSWORD = os.getenv("ZETARIS_PASSWORD", "password")
-
-_OUTCOMES_NAMESPACE = os.getenv("ZETARIS_OUTCOMES_NAMESPACE", "lightning.ct_results")
-
-
-def _zetaris_auth_header() -> dict:
-    if _ZETARIS_API_KEY:
-        return {"Authorization": f"Bearer {_ZETARIS_API_KEY}"}
-    import base64
-    creds = base64.b64encode(f"{_ZETARIS_USERNAME}:{_ZETARIS_PASSWORD}".encode()).decode()
-    return {"Authorization": f"Basic {creds}"}
-
-
-def _zetaris_query(sql: str, timeout: int = 30) -> list[dict]:
-    url = f"{_ZETARIS_REST_URL}/query"
-    payload = json.dumps({"sql": sql}).encode()
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        **_zetaris_auth_header(),
-    }
-    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        body = json.loads(resp.read().decode())
-    cols = body.get("columns", [])
-    rows = body.get("data", [])
-    return [dict(zip(cols, row)) for row in rows]
-
+_OUTCOMES_NAMESPACE = os.getenv("ZETARIS_OUTCOMES_NAMESPACE", "ct_results")
 
 # ---------------------------------------------------------------------------
 # ClinicalTrials.gov results API fallback
@@ -137,7 +96,7 @@ def _ct_results_direct(sub_question: str, limit: int = 30) -> list[dict]:
         primary = outcomes_mod.get("primaryOutcomes", [{}])
         metric = primary[0].get("measure", "") if primary else ""
         timeframe = primary[0].get("timeFrame", "") if primary else ""
-        value = timeframe  # timeframe is the closest proxy without parsed results
+        value = timeframe  # best proxy without parsed numeric results
         enrollment = str(design_mod.get("enrollmentInfo", {}).get("count", ""))
         min_age = elig_mod.get("minimumAge", "")
         max_age = elig_mod.get("maximumAge", "")
@@ -156,36 +115,107 @@ def _ct_results_direct(sub_question: str, limit: int = 30) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Zetaris row normaliser
+# ---------------------------------------------------------------------------
+
+def _parse_zetaris_outcomes_rows(raw_rows: list[dict]) -> list[dict]:
+    """Normalise raw Zetaris rows to contract schema.
+
+    The ct_results.study_results REST table may return:
+    - A raw JSON blob from ClinicalTrials.gov in a 'studies' column (same shape
+      as ct_gov.ct_studies), from which we extract results fields.
+    - Flat projected columns already matching (or close to) the contract keys.
+    """
+    result = []
+    for row in raw_rows:
+        # Case 1: raw ClinicalTrials.gov JSON blob in a 'studies' column
+        if "studies" in row:
+            studies_val = row["studies"]
+            if isinstance(studies_val, str):
+                try:
+                    studies_val = json.loads(studies_val)
+                except Exception:
+                    continue
+            if not isinstance(studies_val, list):
+                studies_val = [studies_val] if isinstance(studies_val, dict) else []
+            for s in studies_val:
+                parsed = _parse_ct_study_outcomes(s)
+                if parsed:
+                    result.append(parsed)
+            continue
+
+        # Case 2: flat columns projected by Zetaris
+        result.append({
+            "condition": str(row.get("condition", row.get("Condition", ""))),
+            "treatment": str(row.get("treatment", row.get("interventionName", row.get("InterventionName", "")))),
+            "outcome_metric": str(row.get("outcome_metric", row.get("primaryOutcomeMeasure", row.get("PrimaryOutcomeMeasure", "")))),
+            "value": str(row.get("value", row.get("primaryOutcomeTimeFrame", row.get("PrimaryOutcomeTimeFrame", "")))),
+            "population_age_group": str(row.get("population_age_group", row.get("ageGroup", "Adult"))),
+            "n_patients": str(row.get("n_patients", row.get("enrollmentCount", row.get("EnrollmentCount", "")))),
+            "source_dataset": str(row.get("source_dataset", row.get("nctId", "ClinicalTrials.gov"))),
+        })
+    return result
+
+
+def _parse_ct_study_outcomes(s: dict) -> dict | None:
+    """Extract outcomes-schema fields from a single ClinicalTrials.gov study object."""
+    proto = s.get("protocolSection", {})
+    if not proto:
+        return None
+    id_mod = proto.get("identificationModule", {})
+    design_mod = proto.get("designModule", {})
+    elig_mod = proto.get("eligibilityModule", {})
+    conds_mod = proto.get("conditionsModule", {})
+    arms_mod = proto.get("armsInterventionsModule", {})
+    outcomes_mod = proto.get("outcomesModule", {})
+
+    conditions = ", ".join(conds_mod.get("conditions", []))
+    interventions = arms_mod.get("interventions", [{}])
+    treatment = interventions[0].get("name", "") if interventions else ""
+    primary = outcomes_mod.get("primaryOutcomes", [{}])
+    metric = primary[0].get("measure", "") if primary else ""
+    timeframe = primary[0].get("timeFrame", "") if primary else ""
+    enrollment = str(design_mod.get("enrollmentInfo", {}).get("count", ""))
+    min_age = elig_mod.get("minimumAge", "")
+    max_age = elig_mod.get("maximumAge", "")
+    nct_id = id_mod.get("nctId", "")
+
+    return {
+        "condition": conditions,
+        "treatment": treatment,
+        "outcome_metric": metric,
+        "value": timeframe,
+        "population_age_group": _age_group(min_age, max_age),
+        "n_patients": enrollment,
+        "source_dataset": f"ClinicalTrials.gov {nct_id}",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Public interface
 # ---------------------------------------------------------------------------
 
 def query_outcomes(sub_question: str) -> list[dict]:
     """Return up to 30 treatment outcome records matching sub_question.
 
-    Tries Zetaris first; falls back to ClinicalTrials.gov results API.
+    Tries Zetaris first (lightning.ct_results.study_results);
+    falls back to ClinicalTrials.gov results API.
     loader._conform will enforce exact keys and length caps.
     """
     # --- Zetaris path ---
     if not config.OFFLINE:
         try:
             safe_q = sub_question.replace("'", "''")
-            sql = f"""
-                SELECT condition,
-                       interventionName    AS treatment,
-                       primaryOutcomeMeasure AS outcome_metric,
-                       primaryOutcomeTimeFrame AS value,
-                       ageGroup            AS population_age_group,
-                       enrollmentCount     AS n_patients,
-                       CONCAT('ClinicalTrials.gov ', nctId) AS source_dataset
-                FROM   {_OUTCOMES_NAMESPACE}
-                WHERE  query = '{safe_q}'
-                  AND  hasResults = true
-                LIMIT  30
-            """
-            rows = _zetaris_query(sql.strip())
-            if rows:
-                log.info("outcomes: %d rows from Zetaris", len(rows))
-                return rows
+            sql = (
+                f"SELECT * FROM {_OUTCOMES_NAMESPACE}.study_results "
+                f"WHERE query = '{safe_q}' LIMIT 30"
+            )
+            raw_rows = zetaris_client.query(sql, page_limit=30)
+            if raw_rows:
+                rows = _parse_zetaris_outcomes_rows(raw_rows)
+                if rows:
+                    log.info("outcomes: %d rows from Zetaris", len(rows))
+                    return rows
             log.info("outcomes: Zetaris returned 0 rows, trying direct API")
         except Exception as exc:
             log.warning("outcomes: Zetaris unavailable (%s), using direct API", exc)
