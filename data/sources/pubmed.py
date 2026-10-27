@@ -131,20 +131,21 @@ def query_literature(sub_question: str) -> list[dict]:
     loader._conform will enforce exact keys and length caps.
     """
     # --- Zetaris path ---
+    # pubmed.esearch is a REST data source registered in Zetaris that wraps PubMed
+    # E-utilities.  The REST table returns raw XML in a '_corrupt_record' column
+    # and does not support column-level WHERE filters (db/term are URL params, not
+    # projected columns).  We query the table without a filter to confirm connectivity,
+    # then parse the XML to extract PMIDs and efetch full article details.
     if not config.OFFLINE:
         try:
-            safe_q = sub_question.replace("'", "''")
-            sql = (
-                f"SELECT * FROM {_PM_NAMESPACE}.esearch "
-                f"WHERE db = 'pubmed' AND term = '{safe_q}' LIMIT 15"
-            )
+            sql = f"SELECT * FROM {_PM_NAMESPACE}.esearch LIMIT 15"
             raw_rows = zetaris_client.query(sql, page_limit=15)
             if raw_rows:
-                rows = _parse_zetaris_pm_rows(raw_rows)
+                rows = _parse_zetaris_pm_rows(raw_rows, sub_question)
                 if rows:
-                    log.info("pubmed: %d rows from Zetaris", len(rows))
+                    log.info("pubmed: %d rows from Zetaris (via esearch XML)", len(rows))
                     return rows
-            log.info("pubmed: Zetaris returned 0 rows, trying direct API")
+            log.info("pubmed: Zetaris returned 0/unparseable rows, trying direct API")
         except Exception as exc:
             log.warning("pubmed: Zetaris unavailable (%s), using direct API", exc)
 
@@ -158,14 +159,29 @@ def query_literature(sub_question: str) -> list[dict]:
         return []
 
 
-def _parse_zetaris_pm_rows(raw_rows: list[dict]) -> list[dict]:
+def _parse_zetaris_pm_rows(raw_rows: list[dict], sub_question: str = "") -> list[dict]:
     """Normalise raw Zetaris rows to contract schema.
 
-    The pubmed.esearch table returns the NCBI JSON blob; parse it or map flat columns.
+    The pubmed.esearch table returns raw XML in '_corrupt_record' (Zetaris name for
+    unparsed REST responses).  We parse the PubMed eSearch XML to extract PMIDs,
+    then efetch full article details.  Falls back to direct esearch if no PMIDs found.
     """
     result = []
     for row in raw_rows:
-        # Case 1: esearchresult JSON blob
+        # Case 1: raw XML in '_corrupt_record' (Zetaris REST passthrough)
+        raw_xml = row.get("_corrupt_record", "")
+        if raw_xml and isinstance(raw_xml, str) and "<eSearchResult" in raw_xml:
+            try:
+                root = ET.fromstring(raw_xml)
+                pmids = [el.text for el in root.findall(".//Id") if el.text]
+                if pmids:
+                    fetched = _efetch(pmids[:15])
+                    result.extend(fetched)
+            except Exception as e:
+                log.debug("pubmed: failed to parse Zetaris XML: %s", e)
+            continue
+
+        # Case 2: esearchresult JSON blob
         if "esearchresult" in row:
             er = row["esearchresult"]
             if isinstance(er, str):
@@ -173,7 +189,6 @@ def _parse_zetaris_pm_rows(raw_rows: list[dict]) -> list[dict]:
                     er = json.loads(er)
                 except Exception:
                     continue
-            # esearch returns just PMIDs — fall through to direct efetch
             pmids = er.get("idlist", []) if isinstance(er, dict) else []
             if pmids:
                 try:
@@ -183,7 +198,7 @@ def _parse_zetaris_pm_rows(raw_rows: list[dict]) -> list[dict]:
                     pass
             continue
 
-        # Case 2: flat columns already projected by Zetaris
+        # Case 3: flat columns already projected by Zetaris
         result.append({
             "pmid": str(row.get("pmid", row.get("Id", ""))),
             "title": str(row.get("title", row.get("Title", ""))),
